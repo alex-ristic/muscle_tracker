@@ -55,7 +55,6 @@ type WorkoutSession = {
 type AppData = { activeSession: WorkoutSession | null; history: WorkoutSession[]; units: Units };
 
 const workoutOrder: WorkoutName[] = ["Upper #1", "Lower #1", "Upper #2", "Lower #2", "Arms & Weak Points"];
-const STORAGE_KEY = "muscle-tracker-data-v1";
 
 type Row = {
   name: string;
@@ -269,14 +268,44 @@ const program: Workout[] = Array.from({ length: 9 }, (_, i) => i + 1).flatMap((w
 const blankData: AppData = { activeSession: null, history: [], units: "kg" };
 
 export default function App() {
-  const [data, setData] = useState<AppData>(() => loadData());
+  const [data, setData] = useState<AppData>(blankData);
+  const [dataLoaded, setDataLoaded] = useState(false);
+  const [syncError, setSyncError] = useState("");
   const [tab, setTab] = useState<"today" | "workout" | "history" | "settings">("today");
   const [sheet, setSheet] = useState<"start" | "change" | null>(null);
   const [completeSession, setCompleteSession] = useState<WorkoutSession | null>(null);
   const [selectedDate, setSelectedDate] = useState(todayKey());
   const [historyMonth, setHistoryMonth] = useState(() => new Date());
 
-  useEffect(() => localStorage.setItem(STORAGE_KEY, JSON.stringify(data)), [data]);
+  useEffect(() => {
+    let alive = true;
+    loadData()
+      .then((serverData) => {
+        if (!alive) return;
+        setData(serverData);
+        setDataLoaded(true);
+        setSyncError("");
+      })
+      .catch(() => {
+        if (!alive) return;
+        setDataLoaded(true);
+        setSyncError("Could not load VPS data.");
+      });
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!dataLoaded) return;
+    const timeout = window.setTimeout(() => {
+      saveData(data)
+        .then(() => setSyncError(""))
+        .catch(() => setSyncError("Could not save to VPS."));
+    }, 250);
+    return () => window.clearTimeout(timeout);
+  }, [data, dataLoaded]);
+
   useEffect(() => {
     const interval = window.setInterval(() => {
       setData((current) => {
@@ -300,6 +329,10 @@ export default function App() {
 
   const recommendation = useMemo(() => getRecommendation(data.history), [data.history]);
   const active = data.activeSession;
+
+  if (!dataLoaded) {
+    return <Shell><main className="screen center"><Dumbbell size={42} /><h1>Loading Tracker</h1><p className="empty">Loading saved data from the VPS.</p></main></Shell>;
+  }
 
   function startWorkout(workout: Workout, date: string) {
     if (data.activeSession) {
@@ -339,6 +372,7 @@ export default function App() {
 
   return (
     <Shell>
+      {syncError && <div className="sync-error">{syncError}</div>}
       {tab === "today" && <TodayScreen recommendation={recommendation} history={data.history} onStart={() => setSheet("start")} onChoose={() => setSheet("start")} />}
       {tab === "workout" && (active ? <WorkoutScreen session={active} units={data.units} history={data.history} onUpdateSet={updateSet} onSelect={(i) => updateActive((s) => ({ ...s, selectedExerciseIndex: i }))} onTimer={(id, patch) => updateActive((s) => ({ ...s, timers: { ...s.timers, [id]: { ...s.timers[id], ...patch, updatedAt: Date.now() } } }))} onChange={() => setSheet("change")} onComplete={completeWorkout} onExit={() => setTab("today")} /> : <EmptyWorkout onStart={() => setSheet("start")} />)}
       {tab === "history" && <HistoryScreen history={data.history} selectedDate={selectedDate} setSelectedDate={setSelectedDate} month={historyMonth} setMonth={setHistoryMonth} />}
@@ -646,13 +680,19 @@ function iCopy(exerciseIndex: number, exercise: SessionExercise, update: (e: num
   if (previous) update(exerciseIndex, target, { weight: previous.weight, reps: previous.reps, rpe: previous.rpe });
 }
 
-function loadData(): AppData {
-  try {
-    const parsed = JSON.parse(localStorage.getItem(STORAGE_KEY) || "");
-    return { ...blankData, ...parsed };
-  } catch {
-    return blankData;
-  }
+async function loadData(): Promise<AppData> {
+  const response = await fetch("/api/data", { cache: "no-store" });
+  if (!response.ok) throw new Error("Failed to load data");
+  return { ...blankData, ...(await response.json()) };
+}
+
+async function saveData(data: AppData) {
+  const response = await fetch("/api/data", {
+    method: "PUT",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(data),
+  });
+  if (!response.ok) throw new Error("Failed to save data");
 }
 
 function downloadJson(data: AppData) {

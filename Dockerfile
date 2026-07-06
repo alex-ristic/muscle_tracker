@@ -11,9 +11,17 @@ COPY index.html tsconfig.json vite.config.ts ./
 COPY src ./src
 RUN pnpm run build
 
-FROM nginx:1.27-alpine
+FROM node:22-alpine
 
-COPY nginx.conf /etc/nginx/conf.d/default.conf
-COPY --from=build /app/dist /usr/share/nginx/html
+WORKDIR /app
 
-EXPOSE 80
+ENV NODE_ENV=production
+ENV PORT=8080
+ENV DATA_DIR=/data
+
+COPY --from=build /app/dist ./dist
+COPY server.mjs ./
+
+EXPOSE 8080
+
+CMD ["node", "server.mjs"]

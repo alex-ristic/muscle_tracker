@@ -5,7 +5,7 @@ Mobile-first React app for running a fixed bodybuilding program in the gym.
 ## Features
 
 - 9-week Pure Bodybuilding Upper/Lower program
-- Local workout history saved in `localStorage`
+- Workout history saved on the VPS in a JSON file
 - Active workout continuation
 - Per-set weight, reps, RPE, completion, and notes
 - Exercise rest timers
@@ -18,6 +18,12 @@ Mobile-first React app for running a fixed bodybuilding program in the gym.
 
 ```bash
 pnpm install
+pnpm run dev:api
+```
+
+In another terminal:
+
+```bash
 pnpm run dev --host 127.0.0.1
 ```
 
@@ -32,11 +38,12 @@ http://127.0.0.1:5173/
 ```bash
 pnpm install --frozen-lockfile
 pnpm run build
+pnpm start
 ```
 
-The static site is generated in `dist/`.
+The Node server serves the built React app from `dist/` and exposes the persistence API at `/api/data`.
 
-## VPS Deployment Option 1: Docker
+## VPS Deployment: Docker
 
 Build and run:
 
@@ -52,15 +59,20 @@ http://YOUR_SERVER_IP:8080
 
 Change the host port in `docker-compose.yml` if needed.
 
-## VPS Deployment Option 2: Static Files
-
-```bash
-pnpm install --frozen-lockfile
-pnpm run build
-```
-
-Serve the `dist/` directory with Nginx/Caddy/Apache. For single-page-app fallback, route unknown paths to `index.html`.
-
 ## Data Storage
 
-This app uses browser `localStorage` only. There is no backend, login, payment, or cloud sync.
+The app does not use browser `localStorage` for workout data.
+
+Data is stored on the VPS by `server.mjs` in:
+
+```text
+/data/muscle-tracker.json
+```
+
+With Docker Compose, `/data` is backed by the named volume:
+
+```text
+muscle-tracker-data
+```
+
+There is no login, payment, or cloud sync.

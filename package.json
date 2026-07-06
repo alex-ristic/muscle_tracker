@@ -6,8 +6,10 @@
   "packageManager": "pnpm@11.7.0",
   "scripts": {
     "dev": "vite",
+    "dev:api": "DATA_DIR=./data PORT=8080 node server.mjs",
     "build": "tsc && vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "start": "node server.mjs"
   },
   "dependencies": {
     "@vitejs/plugin-react": "latest",
