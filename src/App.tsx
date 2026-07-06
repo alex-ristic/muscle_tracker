@@ -425,8 +425,10 @@ function StartSheet({ recommendation, active, onClose, onStart }: { recommendati
       <div className="field"><span>Week</span><div className="stepper"><button onClick={() => setWeek(Math.max(1, week - 1))}><ChevronLeft /></button><b>Week {week}</b><button onClick={() => setWeek(Math.min(9, week + 1))}><ChevronRight /></button></div></div>
       <div className="field"><span>Workout</span><div className="chips">{workoutOrder.map((w) => <button key={w} className={w === name ? "chip active" : "chip"} onClick={() => setName(w)}>{w}</button>)}</div></div>
       <div className="field"><span>Date</span><input className="date-input" type="date" value={date} onChange={(e) => setDate(e.target.value)} /></div>
-      <button className="primary" onClick={() => active ? onStart(chosen, date) : onStart(chosen, date)}>{active ? "Continue Workout" : chosen.id === recommendation.id ? "Start Recommended Workout" : "Start Workout"} <ChevronRight size={18} /></button>
-      <button className="secondary" onClick={onClose}>Cancel</button>
+      <div className="sheet-actions">
+        <button className="primary" onClick={() => active ? onStart(chosen, date) : onStart(chosen, date)}>{active ? "Continue Workout" : chosen.id === recommendation.id ? "Start Recommended Workout" : "Start Workout"} <ChevronRight size={18} /></button>
+        <button className="secondary" onClick={onClose}>Cancel</button>
+      </div>
     </Sheet>
   );
 }
