@@ -1,10 +1,12 @@
 import {
   CalendarDays,
   Check,
+  CheckCircle2,
   ChevronLeft,
   ChevronRight,
   Clock3,
   Copy,
+  CircleSlash,
   Dumbbell,
   ExternalLink,
   Home,
@@ -39,6 +41,8 @@ type Exercise = {
 };
 type Workout = { id: string; week: number; name: WorkoutName; phase: string; sourcePage: number; exercises: Exercise[] };
 type SessionExercise = Exercise & { originalName: string; setLogs: SetLog[]; substitution?: string };
+type WorkoutStatus = "active" | "completed" | "skipped";
+type SavedWorkoutStatus = Exclude<WorkoutStatus, "active">;
 type WorkoutSession = {
   id: string;
   workoutId: string;
@@ -47,7 +51,7 @@ type WorkoutSession = {
   date: string;
   startedAt: string;
   completedAt?: string;
-  status: "active" | "completed";
+  status: WorkoutStatus;
   exercises: SessionExercise[];
   selectedExerciseIndex: number;
   timers: Record<string, { seconds: number; running: boolean; updatedAt: number }>;
@@ -173,6 +177,119 @@ const programNotes = [
   "The Arms & Weak Points day uses the Weak Points Table: shoulders, lats, quads, glutes, chest, neck, hamstrings, calves, mid-back, traps, abs, biceps, and triceps guidance.",
 ];
 
+const customExercisesByGroup: Record<string, { name: string; category: string }[]> = {
+  "Side delts": [
+    custom("Cable Lateral Raise", "Cable · Side delts"),
+    custom("DB Lateral Raise", "Dumbbell · Side delts"),
+    custom("Machine Lateral Raise", "Machine · Side delts"),
+    custom("Lean-Away Cable Lateral Raise", "Cable · Side delts"),
+    custom("Cross-Body Cable Y-Raise", "Cable · Side delts"),
+    custom("Seated DB Lateral Raise", "Dumbbell · Side delts"),
+    custom("Egyptian Cable Lateral Raise", "Cable · Side delts"),
+  ],
+  Lats: [
+    custom("Lat Pulldown", "Cable · Lats"),
+    custom("Neutral-Grip Pulldown", "Cable · Lats"),
+    custom("Pull-Up", "Bodyweight · Lats"),
+    custom("Assisted Pull-Up", "Assisted · Lats"),
+    custom("1-Arm Lat Pulldown", "Cable · Lats"),
+    custom("Machine Pulldown", "Machine · Lats"),
+    custom("Straight-Arm Pulldown", "Cable · Lats"),
+  ],
+  Chest: [
+    custom("Machine Chest Press", "Machine · Chest"),
+    custom("Incline DB Press", "Dumbbell · Chest"),
+    custom("Low Incline Smith Machine Press", "Smith · Chest"),
+    custom("Pec Deck", "Machine · Chest"),
+    custom("Cable Flye", "Cable · Chest"),
+    custom("Push-Up", "Bodyweight · Chest"),
+    custom("Decline Machine Chest Press", "Machine · Chest"),
+  ],
+  Back: [
+    custom("Chest-Supported Machine Row", "Machine · Back"),
+    custom("Chest-Supported T-Bar Row", "Machine · Back"),
+    custom("Seated Cable Row", "Cable · Back"),
+    custom("Single-Arm Cable Row", "Cable · Back"),
+    custom("DB Row", "Dumbbell · Back"),
+    custom("Machine Row", "Machine · Back"),
+    custom("Helms Row", "Dumbbell · Back"),
+  ],
+  Triceps: [
+    custom("Cable Triceps Pressdown", "Cable · Triceps"),
+    custom("Overhead Cable Triceps Extension", "Cable · Triceps"),
+    custom("EZ-Bar Skull Crusher", "Barbell · Triceps"),
+    custom("DB Skull Crusher", "Dumbbell · Triceps"),
+    custom("Seated DB French Press", "Dumbbell · Triceps"),
+    custom("Cable Triceps Kickback", "Cable · Triceps"),
+    custom("Bench Dip", "Bodyweight · Triceps"),
+  ],
+  Hamstrings: [
+    custom("Seated Leg Curl", "Machine · Hamstrings"),
+    custom("Lying Leg Curl", "Machine · Hamstrings"),
+    custom("Romanian Deadlift", "Barbell · Hamstrings"),
+    custom("DB Romanian Deadlift", "Dumbbell · Hamstrings"),
+    custom("Nordic Ham Curl", "Bodyweight · Hamstrings"),
+    custom("Glute-Ham Raise", "Bodyweight · Hamstrings"),
+  ],
+  Quads: [
+    custom("Hack Squat", "Machine · Quads"),
+    custom("Leg Press", "Machine · Quads"),
+    custom("Leg Extension", "Machine · Quads"),
+    custom("Smith Machine Squat", "Smith · Quads"),
+    custom("Bulgarian Split Squat", "Dumbbell · Quads"),
+    custom("Front Squat", "Barbell · Quads"),
+    custom("Goblet Squat", "Dumbbell · Quads"),
+  ],
+  Calves: [
+    custom("Standing Calf Raise", "Machine · Calves"),
+    custom("Seated Calf Raise", "Machine · Calves"),
+    custom("Leg Press Calf Press", "Machine · Calves"),
+    custom("Donkey Calf Raise", "Machine · Calves"),
+    custom("Single-Leg Calf Raise", "Bodyweight · Calves"),
+  ],
+  Biceps: [
+    custom("Bayesian Cable Curl", "Cable · Biceps"),
+    custom("Incline DB Curl", "Dumbbell · Biceps"),
+    custom("Preacher Curl", "Machine · Biceps"),
+    custom("EZ-Bar Curl", "Barbell · Biceps"),
+    custom("Hammer Curl", "Dumbbell · Biceps"),
+    custom("Cable Curl", "Cable · Biceps"),
+    custom("Spider Curl", "Dumbbell · Biceps"),
+  ],
+  Abs: [
+    custom("Cable Crunch", "Cable · Abs"),
+    custom("Machine Crunch", "Machine · Abs"),
+    custom("Hanging Leg Raise", "Bodyweight · Abs"),
+    custom("Roman Chair Leg Raise", "Bodyweight · Abs"),
+    custom("Reverse Crunch", "Bodyweight · Abs"),
+    custom("Ab Wheel Rollout", "Bodyweight · Abs"),
+  ],
+  Glutes: [
+    custom("Hip Thrust", "Barbell · Glutes"),
+    custom("Machine Hip Abduction", "Machine · Glutes"),
+    custom("Cable Hip Abduction", "Cable · Glutes"),
+    custom("DB Walking Lunge", "Dumbbell · Glutes"),
+    custom("Smith Machine Reverse Lunge", "Smith · Glutes"),
+  ],
+  Adductors: [
+    custom("Machine Hip Adduction", "Machine · Adductors"),
+    custom("Cable Hip Adduction", "Cable · Adductors"),
+    custom("Copenhagen Hip Adduction", "Bodyweight · Adductors"),
+  ],
+  "Rear delts": [
+    custom("Reverse Pec Deck", "Machine · Rear delts"),
+    custom("Cable Reverse Flye", "Cable · Rear delts"),
+    custom("Bent-Over Reverse DB Flye", "Dumbbell · Rear delts"),
+    custom("Face Pull", "Cable · Rear delts"),
+  ],
+  Delts: [
+    custom("Machine Shoulder Press", "Machine · Delts"),
+    custom("Seated DB Shoulder Press", "Dumbbell · Delts"),
+    custom("Cable Shoulder Press", "Cable · Delts"),
+    custom("Arnold Press", "Dumbbell · Delts"),
+  ],
+};
+
 const exerciseVideoLinks: Record<string, string> = {
   "Cuffed Behind-The-Back Lateral Raise": "https://youtu.be/fjiOCmFljDM?si=TxwJmdncu-onLNsF",
   "Cross-Body Lat Pull-Around": "https://youtu.be/8W67lZ5mwTU?si=3jxCmDT77ppXpDvT",
@@ -230,6 +347,10 @@ const exerciseVideoLinks: Record<string, string> = {
 
 function row(name: string, technique: string, warmup: string, sets: number, reps: string, early: string, last: string, rest: string, subs: string[], notes: string, category = "Bodybuilding") {
   return { name, technique, warmup, sets, reps, early, last, rest, subs, notes, category };
+}
+
+function custom(name: string, category: string) {
+  return { name, category };
 }
 
 function makeExercise(source: Row, week: number, workoutName: WorkoutName, index: number, phase: string, sourcePage: number): Exercise {
@@ -393,18 +514,18 @@ export default function App() {
   return (
     <Shell>
       {syncError && <div className="sync-error">{syncError}</div>}
-      {tab === "today" && <TodayScreen recommendation={recommendation} history={data.history} onStart={() => setSheet("start")} onChoose={() => setSheet("start")} />}
+      {tab === "today" && <TodayScreen recommendation={recommendation} history={data.history} onStart={() => setSheet("start")} />}
       {tab === "workout" && (active ? <WorkoutScreen session={active} units={data.units} history={data.history} onUpdateSet={updateSet} onSelect={(i) => updateActive((s) => ({ ...s, selectedExerciseIndex: i }))} onTimer={(id, patch) => updateActive((s) => ({ ...s, timers: { ...s.timers, [id]: { ...s.timers[id], ...patch, updatedAt: Date.now() } } }))} onChange={() => setSheet("change")} onComplete={completeWorkout} onExit={() => setTab("today")} /> : <EmptyWorkout onStart={() => setSheet("start")} />)}
       {tab === "history" && <HistoryScreen history={data.history} selectedDate={selectedDate} setSelectedDate={setSelectedDate} month={historyMonth} setMonth={setHistoryMonth} />}
       {tab === "settings" && <SettingsScreen data={data} setData={updateData} />}
       <BottomNav tab={tab} setTab={setTab} hasActive={!!active} />
-      {sheet === "start" && <StartSheet recommendation={recommendation} active={active} onClose={() => setSheet(null)} onStart={startWorkout} />}
+      {sheet === "start" && <StartSheet recommendation={recommendation} history={data.history} active={active} onClose={() => setSheet(null)} onStart={startWorkout} />}
       {sheet === "change" && active && <ChangeSheet session={active} onClose={() => setSheet(null)} onReplace={(choice) => { replaceExercise(choice, updateActive); setSheet(null); }} />}
     </Shell>
   );
 }
 
-function TodayScreen({ recommendation, history, onStart, onChoose }: { recommendation: Workout; history: WorkoutSession[]; onStart: () => void; onChoose: () => void }) {
+function TodayScreen({ recommendation, history, onStart }: { recommendation: Workout; history: WorkoutSession[]; onStart: () => void }) {
   const recent = history.slice().sort(byCompleteDesc).slice(0, 3);
   return (
     <main className="screen">
@@ -418,7 +539,6 @@ function TodayScreen({ recommendation, history, onStart, onChoose }: { recommend
         </div>
         <div className="meta-row"><SmallMeta icon={<Dumbbell />} text={`${recommendation.exercises.length} exercises`} /><SmallMeta icon={<Clock3 />} text="~50 min" /></div>
         <button className="primary" onClick={onStart}>Start Workout <ChevronRight size={18} /></button>
-        <button className="secondary" onClick={onChoose}>Choose Different Workout</button>
       </section>
       <section className="section">
         <Label>Recent</Label>
@@ -428,22 +548,27 @@ function TodayScreen({ recommendation, history, onStart, onChoose }: { recommend
   );
 }
 
-function StartSheet({ recommendation, active, onClose, onStart }: { recommendation: Workout; active: WorkoutSession | null; onClose: () => void; onStart: (w: Workout, date: string) => void }) {
+function StartSheet({ recommendation, history, active, onClose, onStart }: { recommendation: Workout; history: WorkoutSession[]; active: WorkoutSession | null; onClose: () => void; onStart: (w: Workout, date: string) => void }) {
   const [week, setWeek] = useState(recommendation.week);
   const [name, setName] = useState<WorkoutName>(recommendation.name);
   const [date, setDate] = useState(todayKey());
   const chosen = program.find((w) => w.week === week && w.name === name) ?? recommendation;
+  const recommendedStatus = workoutStatus(history, recommendation);
   return (
-    <Sheet dimTitle="Today" dimSubtitle={longDate(new Date())}>
+    <Sheet dimTitle="Today" dimSubtitle={longDate(new Date())} onClose={onClose}>
       <h2 className="sheet-title">Start Workout</h2>
       <button className="recommend-card" onClick={() => { setWeek(recommendation.week); setName(recommendation.name); }}>
-        <div className="between"><Kicker label="Recommended" /><span className="check"><Check size={14} /></span></div>
+        <div className="between"><Kicker label="Recommended" /><StatusMark status={recommendedStatus} emptyIcon /></div>
         <h3>Week {recommendation.week} · {recommendation.name}</h3>
         <SmallMeta icon={<Dumbbell />} text={`${recommendation.exercises.length} exercises · ~50 min · ${countSets(recommendation)} sets`} />
       </button>
       <Label>Or choose different</Label>
       <div className="field"><span>Week</span><div className="stepper"><button onClick={() => setWeek(Math.max(1, week - 1))}><ChevronLeft /></button><b>Week {week}</b><button onClick={() => setWeek(Math.min(9, week + 1))}><ChevronRight /></button></div></div>
-      <div className="field"><span>Workout</span><div className="chips">{workoutOrder.map((w) => <button key={w} className={w === name ? "chip active" : "chip"} onClick={() => setName(w)}>{w}</button>)}</div></div>
+      <div className="field"><span>Workout</span><div className="workout-choice-list">{workoutOrder.map((w) => {
+        const workout = program.find((item) => item.week === week && item.name === w);
+        const status = workout ? workoutStatus(history, workout) : null;
+        return <button key={w} className={w === name ? "workout-choice active" : "workout-choice"} onClick={() => setName(w)}><div><b>{w}</b><span>{statusLabel(status)}</span></div><StatusMark status={status} emptyIcon /></button>;
+      })}</div></div>
       <div className="field"><span>Date</span><input className="date-input" type="date" value={date} onChange={(e) => setDate(e.target.value)} /></div>
       <div className="sheet-actions">
         <button className="primary" onClick={() => active ? onStart(chosen, date) : onStart(chosen, date)}>{active ? "Continue Workout" : chosen.id === recommendation.id ? "Start Recommended Workout" : "Start Workout"} <ChevronRight size={18} /></button>
@@ -574,16 +699,32 @@ function VideoLinkRow({ url }: { url?: string }) {
 
 function ChangeSheet({ session, onClose, onReplace }: { session: WorkoutSession; onClose: () => void; onReplace: (choice: { name: string; category: string; clear: boolean }) => void }) {
   const exercise = session.exercises[session.selectedExerciseIndex];
-  const [choice, setChoice] = useState(exercise.substitutions[0]);
+  const suggested = exercise.substitutions;
+  const customChoices = customChoicesFor(exercise);
+  const [mode, setMode] = useState<"suggested" | "custom">("suggested");
+  const [query, setQuery] = useState("");
+  const [choice, setChoice] = useState(suggested[0] ?? customChoices[0]);
   const hasLogs = exercise.setLogs.some((s) => s.weight || s.reps || s.rpe || s.completed || s.notes);
+  const visibleCustomChoices = customChoices.filter((s) => {
+    const needle = `${s.name} ${s.category}`.toLowerCase();
+    return needle.includes(query.toLowerCase().trim());
+  });
+  const choices = mode === "suggested" ? suggested : visibleCustomChoices;
+  const selectedVisible = !!choice && choices.some((s) => s.name === choice.name);
   return (
-    <Sheet dimTitle={exercise.name} dimSubtitle={exercise.category}>
+    <Sheet dimTitle={exercise.name} dimSubtitle={exercise.category} onClose={onClose}>
       <h2 className="sheet-title">Change Exercise</h2>
       <p className="sheet-copy">Keeps the same sets, reps, RPE targets, rest & notes.</p>
       <div className="current-ex"><Dumbbell /><div><small>Current</small><b>{exercise.name}</b></div><RotateCcw /></div>
-      <Label>Substitutions</Label>
-      {exercise.substitutions.map((s) => <button key={s.name} className={choice.name === s.name ? "sub-row active" : "sub-row"} onClick={() => setChoice(s)}><Dumbbell /><div><b>{s.name}</b><span>{s.category}</span></div><i>{choice.name === s.name && <Check size={14} />}</i></button>)}
-      <button className="primary" onClick={() => onReplace({ ...choice, clear: hasLogs && window.confirm("Clear already logged set data for this exercise? Press Cancel to keep it.") })}>Change to {choice.name}</button>
+      <div className="segmented sheet-segmented">
+        <button className={mode === "suggested" ? "active" : ""} onClick={() => { setMode("suggested"); setChoice(suggested[0] ?? customChoices[0]); }}>Recommended</button>
+        <button className={mode === "custom" ? "active" : ""} onClick={() => { setMode("custom"); setChoice(customChoices[0]); }}>Custom Exercise</button>
+      </div>
+      {mode === "custom" && <input className="search-input" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search exercises" />}
+      <Label>{mode === "suggested" ? "Substitutions" : `${muscleGroupFor(exercise.category)} exercises`}</Label>
+      {choices.map((s) => <button key={`${s.name}-${s.category}`} className={choice.name === s.name ? "sub-row active" : "sub-row"} onClick={() => setChoice(s)}><Dumbbell /><div><b>{s.name}</b><span>{s.category}</span></div><i>{choice.name === s.name && <Check size={14} />}</i></button>)}
+      {!choices.length && <p className="empty">No exercises match that search.</p>}
+      <button className="primary" disabled={!selectedVisible} onClick={() => choice && selectedVisible && onReplace({ ...choice, clear: hasLogs && window.confirm("Clear already logged set data for this exercise? Press Cancel to keep it.") })}>Change to {selectedVisible ? choice.name : "Exercise"}</button>
       <button className="secondary" onClick={onClose}>Cancel</button>
     </Sheet>
   );
@@ -597,7 +738,7 @@ function HistoryScreen({ history, selectedDate, setSelectedDate, month, setMonth
       <Header title="History" subtitle={`${monthSessions.length} sessions this month`} />
       <div className="month-nav"><button onClick={() => setMonth(addMonths(month, -1))}><ChevronLeft /></button><b>{month.toLocaleDateString(undefined, { month: "long", year: "numeric" })}</b><button onClick={() => setMonth(addMonths(month, 1))}><ChevronRight /></button></div>
       <CalendarGrid month={month} history={history} selectedDate={selectedDate} setSelectedDate={setSelectedDate} />
-      <div className="legend"><span><i className="green" />Completed</span><span><i className="yellow" />Partial</span><span><i />Rest</span></div>
+      <div className="legend"><span><StatusMark status="completed" compact />Completed</span><span><StatusMark status="skipped" compact />Skipped</span><span><i />Rest</span></div>
       <section className="section">
         <div className="between"><h3>{longDate(parseLocalDate(selectedDate))}</h3><span className="source">{selectedSessions.length} session{selectedSessions.length === 1 ? "" : "s"}</span></div>
         {selectedSessions.length ? selectedSessions.map((s) => <SessionRow key={s.id} session={s} />) : <p className="empty">No workouts on this date.</p>}
@@ -607,12 +748,33 @@ function HistoryScreen({ history, selectedDate, setSelectedDate, month, setMonth
 }
 
 function SettingsScreen({ data, setData }: { data: AppData; setData: (updater: AppData | ((d: AppData) => AppData)) => void }) {
+  const [week, setWeek] = useState(getRecommendation(data.history).week);
+  const [name, setName] = useState<WorkoutName>(getRecommendation(data.history).name);
+  const [date, setDate] = useState(todayKey());
+  const chosen = program.find((w) => w.week === week && w.name === name) ?? program[0];
+
+  function mark(status: "completed" | "skipped") {
+    const session = createManualSession(chosen, date, status);
+    setData((d) => ({ ...d, history: [session, ...d.history.filter((s) => !sameWorkoutSlot(s, session))] }));
+  }
+
   return (
     <main className="screen">
       <Header title="Settings" subtitle="Program and local data" />
       <section className="settings-card"><Label>Units</Label><div className="segmented"><button className={data.units === "kg" ? "active" : ""} onClick={() => setData((d) => ({ ...d, units: "kg" }))}>kg</button><button className={data.units === "lb" ? "active" : ""} onClick={() => setData((d) => ({ ...d, units: "lb" }))}>lb</button></div></section>
+      <section className="settings-card">
+        <Label>Manual Workout Status</Label>
+        <div className="field"><span>Week</span><div className="stepper"><button onClick={() => setWeek(Math.max(1, week - 1))}><ChevronLeft /></button><b>Week {week}</b><button onClick={() => setWeek(Math.min(9, week + 1))}><ChevronRight /></button></div></div>
+        <div className="field"><span>Workout</span><div className="chips">{workoutOrder.map((w) => {
+          const workout = program.find((item) => item.week === week && item.name === w);
+          const status = workout ? workoutStatus(data.history, workout) : null;
+          return <button key={w} className={`chip ${w === name ? "active" : ""} ${status ? `status-${status}` : ""}`} onClick={() => setName(w)}>{w}</button>;
+        })}</div></div>
+        <div className="field"><span>Date</span><input className="date-input" type="date" value={date} onChange={(e) => setDate(e.target.value)} /></div>
+        <div className="manual-actions"><button className="primary" onClick={() => mark("completed")}>Mark Done</button><button className="secondary" onClick={() => mark("skipped")}>Mark Skipped</button></div>
+      </section>
       <section className="settings-card"><Label>Data</Label><button className="secondary" onClick={() => downloadJson(data)}>Export JSON</button><label className="secondary import">Import JSON<input type="file" accept="application/json" onChange={(e) => importJson(e.currentTarget.files?.[0], setData)} /></label><button className="danger" onClick={() => window.confirm("Reset all Muscle Tracker data?") && setData(blankData)}>Reset Data</button></section>
-      <section className="settings-card"><Label>Program</Label><p className="program-copy">The Pure Bodybuilding Program · Upper/Lower · 9 weeks · {workoutOrder.length} workouts per week.</p>{programNotes.map((note) => <p className="program-copy" key={note}>{note}</p>)}{program.map((w) => <div className="program-row" key={w.id}>Week {w.week} · {w.name}<span>{w.phase} · PDF p.{w.sourcePage}</span></div>)}</section>
+      <section className="settings-card"><Label>Program</Label><p className="program-copy">The Pure Bodybuilding Program · Upper/Lower · 9 weeks · {workoutOrder.length} workouts per week.</p>{programNotes.map((note) => <p className="program-copy" key={note}>{note}</p>)}{program.map((w) => <div className="program-row" key={w.id}><StatusMark status={workoutStatus(data.history, w)} emptyIcon /><div>Week {w.week} · {w.name}<span>{w.phase} · PDF p.{w.sourcePage}</span></div></div>)}</section>
     </main>
   );
 }
@@ -640,29 +802,51 @@ function Header({ title, subtitle }: { title: string; subtitle: string }) { retu
 function Label({ children }: { children: React.ReactNode }) { return <div className="label">{children}</div>; }
 function Kicker({ label }: { label: string }) { return <div className="kicker"><span />{label}</div>; }
 function SmallMeta({ icon, text }: { icon: React.ReactNode; text: string }) { return <div className="small-meta">{icon}<span>{text}</span></div>; }
-function Sheet({ children, dimTitle, dimSubtitle }: { children: React.ReactNode; dimTitle: string; dimSubtitle: string }) { return <div className="sheet-wrap"><div className="sheet-dim"><h1>{dimTitle}</h1><p>{dimSubtitle}</p></div><div className="sheet"><div className="grabber" />{children}</div></div>; }
+function Sheet({ children, dimTitle, dimSubtitle, onClose }: { children: React.ReactNode; dimTitle: string; dimSubtitle: string; onClose?: () => void }) {
+  return <div className="sheet-wrap" onClick={onClose}><div className="sheet-dim"><h1>{dimTitle}</h1><p>{dimSubtitle}</p></div><div className="sheet" onClick={(event) => event.stopPropagation()}><div className="grabber" />{children}</div></div>;
+}
 function Stat({ icon, label, value }: { icon: React.ReactNode; label: string; value: string }) { return <div className="stat">{icon}<span>{label}</span><b>{value}</b></div>; }
 function EmptyWorkout({ onStart }: { onStart: () => void }) { return <main className="screen center"><Dumbbell size={42} /><h1>No Active Workout</h1><button className="primary" onClick={onStart}>Start Workout</button></main>; }
+function StatusMark({ status, compact = false, emptyIcon = false }: { status: SavedWorkoutStatus | null; compact?: boolean; emptyIcon?: boolean }) {
+  if (status === "completed") return <span className={compact ? "status-mark compact completed" : "status-mark completed"}><CheckCircle2 size={compact ? 11 : 16} /></span>;
+  if (status === "skipped") return <span className={compact ? "status-mark compact skipped" : "status-mark skipped"}><CircleSlash size={compact ? 11 : 16} /></span>;
+  return emptyIcon ? <span className={compact ? "status-mark compact empty" : "status-mark empty"} /> : null;
+}
 
 function SessionRow({ session }: { session: WorkoutSession }) {
   const completed = session.status === "completed";
+  const skipped = session.status === "skipped";
   const completedSets = session.exercises.flatMap((e) => e.setLogs).filter((s) => s.completed).length;
-  return <div className="session-row"><i className={completed ? "green" : "yellow"} /><div><b>Week {session.week} · {session.name}</b><span>{completed ? "Completed" : "Partial"} · {completedSets} sets</span></div><em>{completed ? "Completed" : "Partial"}</em></div>;
+  return <div className="session-row"><StatusMark status={completed ? "completed" : skipped ? "skipped" : null} emptyIcon /><div><b>Week {session.week} · {session.name}</b><span>{completed ? "Completed" : skipped ? "Skipped" : "Partial"} · {completedSets} sets</span></div><em className={completed ? "green" : skipped ? "yellow" : ""}>{completed ? "Completed" : skipped ? "Skipped" : "Partial"}</em></div>;
 }
 
 function WeekStrip({ history }: { history: WorkoutSession[] }) {
   const now = new Date();
-  return <div className="week-strip">{Array.from({ length: 7 }, (_, i) => addDays(now, i - 4)).map((date) => { const key = dateKey(date); const has = history.some((s) => s.date === key); const today = key === todayKey(); return <div className={today ? "day active" : "day"} key={key}><span>{date.toLocaleDateString(undefined, { weekday: "short" }).slice(0, 2)}</span><b>{date.getDate()}</b><i className={has ? "green" : ""} /></div>; })}</div>;
+  return <div className="week-strip">{Array.from({ length: 7 }, (_, i) => addDays(now, i - 4)).map((date) => { const key = dateKey(date); const today = key === todayKey(); return <div className={today ? "day active" : "day"} key={key}><span>{date.toLocaleDateString(undefined, { weekday: "short" }).slice(0, 2)}</span><b>{date.getDate()}</b><StatusMark status={dayStatus(history, key)} compact emptyIcon /></div>; })}</div>;
 }
 
 function CalendarGrid({ month, history, selectedDate, setSelectedDate }: { month: Date; history: WorkoutSession[]; selectedDate: string; setSelectedDate: (d: string) => void }) {
   const cells = monthCells(month);
-  return <div className="calendar"><div className="weekdays">{["Mo", "Tu", "We", "Th", "Fr", "Sa", "Su"].map((d) => <b key={d}>{d}</b>)}</div>{cells.map((d, i) => d ? <button key={dateKey(d)} className={selectedDate === dateKey(d) ? "cal-day active" : "cal-day"} onClick={() => setSelectedDate(dateKey(d))}><span>{d.getDate()}</span><i className={history.some((s) => s.date === dateKey(d) && s.status === "completed") ? "green" : ""} /></button> : <div key={`empty-${i}`} className="cal-day empty-cell" />)}</div>;
+  return <div className="calendar"><div className="weekdays">{["Mo", "Tu", "We", "Th", "Fr", "Sa", "Su"].map((d) => <b key={d}>{d}</b>)}</div>{cells.map((d, i) => d ? <button key={dateKey(d)} className={selectedDate === dateKey(d) ? "cal-day active" : "cal-day"} onClick={() => setSelectedDate(dateKey(d))}><span>{d.getDate()}</span><StatusMark status={dayStatus(history, dateKey(d))} compact emptyIcon /></button> : <div key={`empty-${i}`} className="cal-day empty-cell" />)}</div>;
 }
 
 function createSession(workout: Workout, date: string): WorkoutSession {
   const exercises = workout.exercises.map((e) => ({ ...e, originalName: e.name, setLogs: Array.from({ length: e.workingSets }, (_, i) => ({ weight: "", reps: e.targetReps[i] ?? e.targetReps.at(-1) ?? "", rpe: i === e.workingSets - 1 ? e.lastSetRpe.replaceAll("~", "") : e.earlySetRpe.replaceAll("~", ""), completed: false, notes: "" })) }));
   return { id: crypto.randomUUID(), workoutId: workout.id, week: workout.week, name: workout.name, date, startedAt: new Date().toISOString(), status: "active", selectedExerciseIndex: 0, exercises, timers: Object.fromEntries(exercises.map((e) => [e.id, { seconds: e.restSeconds, running: false, updatedAt: Date.now() }])) };
+}
+
+function createManualSession(workout: Workout, date: string, status: "completed" | "skipped"): WorkoutSession {
+  const session = createSession(workout, date);
+  const at = new Date().toISOString();
+  return {
+    ...session,
+    status,
+    startedAt: at,
+    completedAt: at,
+    exercises: status === "completed"
+      ? session.exercises.map((exercise) => ({ ...exercise, setLogs: exercise.setLogs.map((set) => ({ ...set, completed: true })) }))
+      : session.exercises,
+  };
 }
 
 function replaceExercise(choice: { name: string; category: string; clear: boolean }, update: (u: (s: WorkoutSession) => WorkoutSession) => void) {
@@ -674,7 +858,7 @@ function replaceExercise(choice: { name: string; category: string; clear: boolea
 }
 
 function getRecommendation(history: WorkoutSession[]) {
-  const completed = history.filter((s) => s.status === "completed").sort(byCompleteDesc)[0];
+  const completed = history.filter((s) => s.status === "completed" || s.status === "skipped").sort(byCompleteDesc)[0];
   if (!completed) return program[0];
   const nextIndex = workoutOrder.indexOf(completed.name) + 1;
   const week = nextIndex >= workoutOrder.length ? (completed.week % 9) + 1 : completed.week;
@@ -690,15 +874,61 @@ function previousPerformance(exerciseName: string, currentId: string, history: W
   return null;
 }
 
+function workoutStatus(history: WorkoutSession[], workout: Workout): SavedWorkoutStatus | null {
+  const latest = history.filter((s) => s.week === workout.week && s.name === workout.name && (s.status === "completed" || s.status === "skipped")).sort(byCompleteDesc)[0];
+  if (latest?.status === "completed" || latest?.status === "skipped") return latest.status;
+  return null;
+}
+
+function dayStatus(history: WorkoutSession[], key: string): SavedWorkoutStatus | null {
+  if (history.some((s) => s.date === key && s.status === "completed")) return "completed";
+  if (history.some((s) => s.date === key && s.status === "skipped")) return "skipped";
+  return null;
+}
+
+function statusLabel(status: SavedWorkoutStatus | null) {
+  if (status === "completed") return "Done";
+  if (status === "skipped") return "Skipped";
+  return "Not done";
+}
+
+function sameWorkoutSlot(a: Pick<WorkoutSession, "week" | "name">, b: Pick<WorkoutSession, "week" | "name">) {
+  return a.week === b.week && a.name === b.name;
+}
+
+function customChoicesFor(exercise: Exercise) {
+  const group = muscleGroupFor(exercise.category);
+  const sameGroup = customExercisesByGroup[group] ?? [];
+  const programChoices = [...exercise.substitutions, ...program.flatMap((workout) => workout.exercises.map((e) => ({ name: e.name, category: e.category })))];
+  const allChoices = [...sameGroup, ...programChoices, ...Object.values(customExercisesByGroup).flat()];
+  const unique = new Map<string, { name: string; category: string }>();
+  for (const choice of allChoices) {
+    if (choice.name !== exercise.name) unique.set(choice.name.toLowerCase(), choice);
+  }
+  return [...unique.values()];
+}
+
+function muscleGroupFor(category: string) {
+  const group = category.split("·").at(-1)?.trim();
+  return group && customExercisesByGroup[group] ? group : "Back";
+}
+
 function copyPrevious(history: WorkoutSession[], exerciseName: string, apply: (sets: Partial<SetLog>[]) => void) {
   const prev = previousPerformance(exerciseName, "", history);
   if (prev) apply(prev.exercise.setLogs.map(({ weight, reps, rpe }) => ({ weight, reps, rpe })));
 }
 
 function iCopy(exerciseIndex: number, exercise: SessionExercise, update: (e: number, s: number, p: Partial<SetLog>) => void) {
-  const firstEmpty = exercise.setLogs.findIndex((s) => !s.weight && !s.reps && !s.rpe);
-  const target = firstEmpty > 0 ? firstEmpty : 1;
-  const previous = exercise.setLogs[target - 1];
+  const target = exercise.setLogs.findIndex((s) => !s.completed);
+  if (target <= 0) return;
+  let previous: SetLog | undefined;
+  for (let i = target - 1; i >= 0; i -= 1) {
+    const set = exercise.setLogs[i];
+    if (set.completed || set.weight || set.reps || set.rpe) {
+      previous = set;
+      break;
+    }
+  }
   if (previous) update(exerciseIndex, target, { weight: previous.weight, reps: previous.reps, rpe: previous.rpe });
 }
 
@@ -782,7 +1012,7 @@ function lowerRpe(rpe: string) {
 function countSets(w: Workout) { return w.exercises.reduce((sum, e) => sum + e.workingSets, 0); }
 function durationMin(s: WorkoutSession) { return Math.max(1, Math.round((new Date(s.completedAt ?? new Date()).getTime() - new Date(s.startedAt).getTime()) / 60000)); }
 function byCompleteDesc(a: WorkoutSession, b: WorkoutSession) { return new Date(b.completedAt ?? b.startedAt).getTime() - new Date(a.completedAt ?? a.startedAt).getTime(); }
-function recommendationReason(history: WorkoutSession[]) { const last = history.filter((s) => s.status === "completed").sort(byCompleteDesc)[0]; return last ? `Because you completed Week ${last.week} · ${last.name} last.` : "Start with the first workout in the program."; }
+function recommendationReason(history: WorkoutSession[]) { const last = history.filter((s) => s.status === "completed" || s.status === "skipped").sort(byCompleteDesc)[0]; return last ? `Because you ${last.status === "skipped" ? "skipped" : "completed"} Week ${last.week} · ${last.name} last.` : "Start with the first workout in the program."; }
 function formatTimer(seconds: number) { return `${Math.floor(seconds / 60).toString().padStart(2, "0")}:${(seconds % 60).toString().padStart(2, "0")}`; }
 function todayKey() { return dateKey(new Date()); }
 function dateKey(d: Date) { return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; }
