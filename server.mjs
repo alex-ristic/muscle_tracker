@@ -9,8 +9,10 @@ const port = Number(process.env.PORT || 8080);
 const dataDir = process.env.DATA_DIR || join(__dirname, "data");
 const dataFile = process.env.DATA_FILE || join(dataDir, "muscle-tracker.json");
 const staticDir = join(__dirname, "dist");
+const basePath = normalizeBasePath(process.env.BASE_PATH || process.env.VITE_BASE_PATH || "/");
 
-const blankData = { activeSession: null, history: [], units: "kg" };
+const dataSchemaVersion = 2;
+const blankData = { schemaVersion: dataSchemaVersion, updatedAt: "", activeSession: null, history: [], units: "kg" };
 const mimeTypes = {
   ".html": "text/html; charset=utf-8",
   ".js": "text/javascript; charset=utf-8",
@@ -27,7 +29,12 @@ const mimeTypes = {
 
 await mkdir(dataDir, { recursive: true });
 if (!existsSync(dataFile)) {
-  await writeJson(blankData);
+  await writeJson(stampData(blankData));
+} else {
+  const existing = await readJson();
+  if (!existing.updatedAt || existing.schemaVersion !== dataSchemaVersion) {
+    await writeJson(stampData(existing));
+  }
 }
 
 function sendJson(response, status, payload) {
@@ -46,21 +53,55 @@ async function readBody(request) {
 
 async function readJson() {
   try {
-    return { ...blankData, ...JSON.parse(await readFile(dataFile, "utf8")) };
+    return normalizeData(JSON.parse(await readFile(dataFile, "utf8")));
   } catch {
-    return blankData;
+    return normalizeData(blankData);
   }
 }
 
 async function writeJson(data) {
   const tmpFile = `${dataFile}.tmp`;
-  await writeFile(tmpFile, JSON.stringify({ ...blankData, ...data }, null, 2));
+  await writeFile(tmpFile, JSON.stringify(normalizeData(data), null, 2));
   await rename(tmpFile, dataFile);
+}
+
+function normalizeData(data) {
+  return {
+    ...blankData,
+    ...data,
+    schemaVersion: Number(data?.schemaVersion) || dataSchemaVersion,
+    updatedAt: typeof data?.updatedAt === "string" ? data.updatedAt : "",
+    activeSession: data?.activeSession ?? null,
+    history: Array.isArray(data?.history) ? data.history : [],
+    units: data?.units === "lb" ? "lb" : "kg",
+  };
+}
+
+function stampData(data) {
+  return { ...normalizeData(data), schemaVersion: dataSchemaVersion, updatedAt: new Date().toISOString() };
+}
+
+function normalizeBasePath(path) {
+  if (!path || path === "/") return "/";
+  return `/${path.replace(/^\/+|\/+$/g, "")}/`;
+}
+
+function stripBasePath(pathname) {
+  if (basePath === "/" || !pathname.startsWith(basePath)) return pathname;
+  return `/${pathname.slice(basePath.length)}`;
+}
+
+function isDataPath(pathname) {
+  return pathname === "/api/data" || pathname === `${basePath}api/data`;
+}
+
+function isHealthPath(pathname) {
+  return pathname === "/api/health" || pathname === `${basePath}api/health`;
 }
 
 function serveStatic(request, response) {
   const url = new URL(request.url ?? "/", `http://${request.headers.host}`);
-  const pathname = decodeURIComponent(url.pathname);
+  const pathname = stripBasePath(decodeURIComponent(url.pathname));
   const normalized = normalize(pathname).replace(/^(\.\.[/\\])+/, "");
   let filePath = join(staticDir, normalized);
 
@@ -83,19 +124,24 @@ createServer(async (request, response) => {
   try {
     const url = new URL(request.url ?? "/", `http://${request.headers.host}`);
 
-    if (url.pathname === "/api/health") {
+    if (isHealthPath(url.pathname)) {
       sendJson(response, 200, { ok: true });
       return;
     }
 
-    if (url.pathname === "/api/data" && request.method === "GET") {
+    if (isDataPath(url.pathname) && request.method === "GET") {
       sendJson(response, 200, await readJson());
       return;
     }
 
-    if (url.pathname === "/api/data" && request.method === "PUT") {
+    if (isDataPath(url.pathname) && request.method === "PUT") {
       const body = await readBody(request);
-      const data = JSON.parse(body || "{}");
+      const data = normalizeData(JSON.parse(body || "{}"));
+      const current = await readJson();
+      if (current.updatedAt && !data.updatedAt) {
+        sendJson(response, 409, { error: "Refusing to overwrite VPS data without updatedAt metadata." });
+        return;
+      }
       await writeJson(data);
       sendJson(response, 200, { ok: true });
       return;
@@ -113,5 +159,6 @@ createServer(async (request, response) => {
   }
 }).listen(port, "0.0.0.0", () => {
   console.log(`Muscle Tracker listening on :${port}`);
+  console.log(`Base path: ${basePath}`);
   console.log(`Data file: ${dataFile}`);
 });

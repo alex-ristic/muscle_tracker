@@ -37,11 +37,11 @@ http://127.0.0.1:5173/
 
 ```bash
 pnpm install --frozen-lockfile
-pnpm run build
-pnpm start
+VITE_BASE_PATH=/workouts/ pnpm run build
+BASE_PATH=/workouts/ pnpm start
 ```
 
-The Node server serves the built React app from `dist/` and exposes the persistence API at `/api/data`.
+The Node server serves the built React app from `dist/`. In local development the app uses `/api/data` through the Vite proxy. In production under `/workouts/`, the app calls `/workouts/api/data`.
 
 ## VPS Deployment: Docker
 
@@ -74,5 +74,7 @@ With Docker Compose, `/data` is backed by the named volume:
 ```text
 muscle-tracker-data
 ```
+
+The VPS JSON file is the source of truth. Browser/device data is not used as an automatic sync source, so stale browser storage cannot overwrite the server file. Saved data includes `schemaVersion` and `updatedAt` metadata.
 
 There is no login, payment, or cloud sync.

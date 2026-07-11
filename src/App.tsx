@@ -52,7 +52,13 @@ type WorkoutSession = {
   selectedExerciseIndex: number;
   timers: Record<string, { seconds: number; running: boolean; updatedAt: number }>;
 };
-type AppData = { activeSession: WorkoutSession | null; history: WorkoutSession[]; units: Units };
+type AppData = {
+  schemaVersion: number;
+  updatedAt: string;
+  activeSession: WorkoutSession | null;
+  history: WorkoutSession[];
+  units: Units;
+};
 
 const workoutOrder: WorkoutName[] = ["Upper #1", "Lower #1", "Upper #2", "Lower #2", "Arms & Weak Points"];
 
@@ -265,11 +271,14 @@ const program: Workout[] = Array.from({ length: 9 }, (_, i) => i + 1).flatMap((w
   }));
 });
 
-const blankData: AppData = { activeSession: null, history: [], units: "kg" };
+const DATA_SCHEMA_VERSION = 2;
+const blankData: AppData = { schemaVersion: DATA_SCHEMA_VERSION, updatedAt: "", activeSession: null, history: [], units: "kg" };
 
 export default function App() {
   const [data, setData] = useState<AppData>(blankData);
   const [dataLoaded, setDataLoaded] = useState(false);
+  const [serverReady, setServerReady] = useState(false);
+  const [saveToken, setSaveToken] = useState(0);
   const [syncError, setSyncError] = useState("");
   const [tab, setTab] = useState<"today" | "workout" | "history" | "settings">("today");
   const [sheet, setSheet] = useState<"start" | "change" | null>(null);
@@ -284,11 +293,13 @@ export default function App() {
         if (!alive) return;
         setData(serverData);
         setDataLoaded(true);
+        setServerReady(true);
         setSyncError("");
       })
       .catch(() => {
         if (!alive) return;
         setDataLoaded(true);
+        setServerReady(false);
         setSyncError("Could not load VPS data.");
       });
     return () => {
@@ -297,18 +308,27 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    if (!dataLoaded) return;
+    if (!dataLoaded || !serverReady || saveToken === 0) return;
     const timeout = window.setTimeout(() => {
       saveData(data)
         .then(() => setSyncError(""))
         .catch(() => setSyncError("Could not save to VPS."));
     }, 250);
     return () => window.clearTimeout(timeout);
-  }, [data, dataLoaded]);
+  }, [data, dataLoaded, serverReady, saveToken]);
+
+  function updateData(updater: AppData | ((current: AppData) => AppData)) {
+    setData((current) => {
+      const next = typeof updater === "function" ? updater(current) : updater;
+      if (next === current) return current;
+      setSaveToken((token) => token + 1);
+      return stampData(next);
+    });
+  }
 
   useEffect(() => {
     const interval = window.setInterval(() => {
-      setData((current) => {
+      updateData((current) => {
         if (!current.activeSession) return current;
         let changed = false;
         const timers = { ...current.activeSession.timers };
@@ -341,13 +361,13 @@ export default function App() {
       return;
     }
     const session = createSession(workout, date);
-    setData((d) => ({ ...d, activeSession: session }));
+    updateData((d) => ({ ...d, activeSession: session }));
     setTab("workout");
     setSheet(null);
   }
 
   function updateActive(updater: (session: WorkoutSession) => WorkoutSession) {
-    setData((d) => (d.activeSession ? { ...d, activeSession: updater(d.activeSession) } : d));
+    updateData((d) => (d.activeSession ? { ...d, activeSession: updater(d.activeSession) } : d));
   }
 
   function updateSet(exerciseIndex: number, setIndex: number, patch: Partial<SetLog>) {
@@ -362,12 +382,12 @@ export default function App() {
   function completeWorkout() {
     if (!active) return;
     const completed = { ...active, status: "completed" as const, completedAt: new Date().toISOString() };
-    setData((d) => ({ ...d, activeSession: null, history: [completed, ...d.history.filter((s) => s.id !== completed.id)] }));
+    updateData((d) => ({ ...d, activeSession: null, history: [completed, ...d.history.filter((s) => s.id !== completed.id)] }));
     setCompleteSession(completed);
   }
 
   if (completeSession) {
-    return <Shell><CompleteScreen session={completeSession} next={getRecommendation([...data.history, completeSession])} onFinish={() => { setCompleteSession(null); setTab("today"); }} onEdit={() => { setData((d) => ({ ...d, activeSession: { ...completeSession, status: "active", completedAt: undefined }, history: d.history.filter((s) => s.id !== completeSession.id) })); setCompleteSession(null); setTab("workout"); }} /></Shell>;
+    return <Shell><CompleteScreen session={completeSession} next={getRecommendation([...data.history, completeSession])} onFinish={() => { setCompleteSession(null); setTab("today"); }} onEdit={() => { updateData((d) => ({ ...d, activeSession: { ...completeSession, status: "active", completedAt: undefined }, history: d.history.filter((s) => s.id !== completeSession.id) })); setCompleteSession(null); setTab("workout"); }} /></Shell>;
   }
 
   return (
@@ -376,7 +396,7 @@ export default function App() {
       {tab === "today" && <TodayScreen recommendation={recommendation} history={data.history} onStart={() => setSheet("start")} onChoose={() => setSheet("start")} />}
       {tab === "workout" && (active ? <WorkoutScreen session={active} units={data.units} history={data.history} onUpdateSet={updateSet} onSelect={(i) => updateActive((s) => ({ ...s, selectedExerciseIndex: i }))} onTimer={(id, patch) => updateActive((s) => ({ ...s, timers: { ...s.timers, [id]: { ...s.timers[id], ...patch, updatedAt: Date.now() } } }))} onChange={() => setSheet("change")} onComplete={completeWorkout} onExit={() => setTab("today")} /> : <EmptyWorkout onStart={() => setSheet("start")} />)}
       {tab === "history" && <HistoryScreen history={data.history} selectedDate={selectedDate} setSelectedDate={setSelectedDate} month={historyMonth} setMonth={setHistoryMonth} />}
-      {tab === "settings" && <SettingsScreen data={data} setData={setData} />}
+      {tab === "settings" && <SettingsScreen data={data} setData={updateData} />}
       <BottomNav tab={tab} setTab={setTab} hasActive={!!active} />
       {sheet === "start" && <StartSheet recommendation={recommendation} active={active} onClose={() => setSheet(null)} onStart={startWorkout} />}
       {sheet === "change" && active && <ChangeSheet session={active} onClose={() => setSheet(null)} onReplace={(choice) => { replaceExercise(choice, updateActive); setSheet(null); }} />}
@@ -683,13 +703,13 @@ function iCopy(exerciseIndex: number, exercise: SessionExercise, update: (e: num
 }
 
 async function loadData(): Promise<AppData> {
-  const response = await fetch("/api/data", { cache: "no-store" });
+  const response = await fetch(apiUrl("api/data"), { cache: "no-store" });
   if (!response.ok) throw new Error("Failed to load data");
-  return { ...blankData, ...(await response.json()) };
+  return normalizeData(await response.json());
 }
 
 async function saveData(data: AppData) {
-  const response = await fetch("/api/data", {
+  const response = await fetch(apiUrl("api/data"), {
     method: "PUT",
     headers: { "content-type": "application/json" },
     body: JSON.stringify(data),
@@ -708,7 +728,27 @@ function downloadJson(data: AppData) {
 
 function importJson(file: File | undefined, setData: (d: AppData) => void) {
   if (!file) return;
-  file.text().then((text) => setData({ ...blankData, ...JSON.parse(text) }));
+  file.text().then((text) => setData(normalizeData(JSON.parse(text))));
+}
+
+function apiUrl(path: string) {
+  return new URL(path, window.location.origin + import.meta.env.BASE_URL).toString();
+}
+
+function normalizeData(payload: Partial<AppData>): AppData {
+  return {
+    ...blankData,
+    ...payload,
+    schemaVersion: Number(payload.schemaVersion) || DATA_SCHEMA_VERSION,
+    updatedAt: typeof payload.updatedAt === "string" ? payload.updatedAt : "",
+    activeSession: payload.activeSession ?? null,
+    history: Array.isArray(payload.history) ? payload.history : [],
+    units: payload.units === "lb" ? "lb" : "kg",
+  };
+}
+
+function stampData(data: AppData): AppData {
+  return { ...normalizeData(data), schemaVersion: DATA_SCHEMA_VERSION, updatedAt: new Date().toISOString() };
 }
 
 function splitReps(reps: string, sets: number) {

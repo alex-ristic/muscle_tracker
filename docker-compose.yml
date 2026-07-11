@@ -1,8 +1,13 @@
 services:
   muscle-tracker:
-    build: .
+    build:
+      context: .
+      args:
+        VITE_BASE_PATH: /workouts/
     container_name: muscle-tracker
     restart: unless-stopped
+    environment:
+      BASE_PATH: /workouts/
     ports:
       - "8080:8080"
     volumes:
