@@ -1,4 +1,5 @@
 import {
+  Activity,
   CalendarDays,
   Check,
   CheckCircle2,
@@ -47,7 +48,9 @@ type WorkoutSession = {
   id: string;
   workoutId: string;
   week: number;
-  name: WorkoutName;
+  name: WorkoutName | "Cardio";
+  kind?: "strength" | "cardio";
+  note?: string;
   date: string;
   startedAt: string;
   completedAt?: string;
@@ -519,7 +522,13 @@ export default function App() {
       {tab === "history" && <HistoryScreen history={data.history} selectedDate={selectedDate} setSelectedDate={setSelectedDate} month={historyMonth} setMonth={setHistoryMonth} />}
       {tab === "settings" && <SettingsScreen data={data} setData={updateData} />}
       <BottomNav tab={tab} setTab={setTab} hasActive={!!active} />
-      {sheet === "start" && <StartSheet recommendation={recommendation} history={data.history} active={active} onClose={() => setSheet(null)} onStart={startWorkout} />}
+      {sheet === "start" && <StartSheet recommendation={recommendation} history={data.history} active={active} onClose={() => setSheet(null)} onStart={startWorkout} onLogCardio={(date, note) => {
+        const session = createCardioSession(date, note);
+        updateData((d) => ({ ...d, history: [session, ...d.history] }));
+        setSelectedDate(date);
+        setHistoryMonth(parseLocalDate(date));
+        setSheet(null);
+      }} />}
       {sheet === "change" && active && <ChangeSheet session={active} onClose={() => setSheet(null)} onReplace={(choice) => { replaceExercise(choice, updateActive); setSheet(null); }} />}
     </Shell>
   );
@@ -548,30 +557,41 @@ function TodayScreen({ recommendation, history, onStart }: { recommendation: Wor
   );
 }
 
-function StartSheet({ recommendation, history, active, onClose, onStart }: { recommendation: Workout; history: WorkoutSession[]; active: WorkoutSession | null; onClose: () => void; onStart: (w: Workout, date: string) => void }) {
+function StartSheet({ recommendation, history, active, onClose, onStart, onLogCardio }: { recommendation: Workout; history: WorkoutSession[]; active: WorkoutSession | null; onClose: () => void; onStart: (w: Workout, date: string) => void; onLogCardio: (date: string, note: string) => void }) {
+  const [mode, setMode] = useState<"program" | "cardio">("program");
   const [week, setWeek] = useState(recommendation.week);
   const [name, setName] = useState<WorkoutName>(recommendation.name);
   const [date, setDate] = useState(todayKey());
+  const [cardioNote, setCardioNote] = useState("");
   const chosen = program.find((w) => w.week === week && w.name === name) ?? recommendation;
   const recommendedStatus = workoutStatus(history, recommendation);
   return (
     <Sheet dimTitle="Today" dimSubtitle={longDate(new Date())} onClose={onClose}>
       <h2 className="sheet-title">Start Workout</h2>
-      <button className="recommend-card" onClick={() => { setWeek(recommendation.week); setName(recommendation.name); }}>
-        <div className="between"><Kicker label="Recommended" /><StatusMark status={recommendedStatus} emptyIcon /></div>
-        <h3>Week {recommendation.week} · {recommendation.name}</h3>
-        <SmallMeta icon={<Dumbbell />} text={`${recommendation.exercises.length} exercises · ~50 min · ${countSets(recommendation)} sets`} />
-      </button>
-      <Label>Or choose different</Label>
-      <div className="field"><span>Week</span><div className="stepper"><button onClick={() => setWeek(Math.max(1, week - 1))}><ChevronLeft /></button><b>Week {week}</b><button onClick={() => setWeek(Math.min(9, week + 1))}><ChevronRight /></button></div></div>
-      <div className="field"><span>Workout</span><div className="workout-choice-list">{workoutOrder.map((w) => {
-        const workout = program.find((item) => item.week === week && item.name === w);
-        const status = workout ? workoutStatus(history, workout) : null;
-        return <button key={w} className={w === name ? "workout-choice active" : "workout-choice"} onClick={() => setName(w)}><div><b>{w}</b><span>{statusLabel(status)}</span></div><StatusMark status={status} emptyIcon /></button>;
-      })}</div></div>
+      <div className="segmented sheet-segmented workout-type-picker">
+        <button className={mode === "program" ? "active" : ""} onClick={() => setMode("program")}><Dumbbell size={17} /> Program</button>
+        <button className={mode === "cardio" ? "active" : ""} onClick={() => setMode("cardio")}><Activity size={17} /> Cardio</button>
+      </div>
+      {mode === "program" ? <>
+        <button className="recommend-card" onClick={() => { setWeek(recommendation.week); setName(recommendation.name); }}>
+          <div className="between"><Kicker label="Recommended" /><StatusMark status={recommendedStatus} emptyIcon /></div>
+          <h3>Week {recommendation.week} · {recommendation.name}</h3>
+          <SmallMeta icon={<Dumbbell />} text={`${recommendation.exercises.length} exercises · ~50 min · ${countSets(recommendation)} sets`} />
+        </button>
+        <Label>Or choose different</Label>
+        <div className="field"><span>Week</span><div className="stepper"><button onClick={() => setWeek(Math.max(1, week - 1))}><ChevronLeft /></button><b>Week {week}</b><button onClick={() => setWeek(Math.min(9, week + 1))}><ChevronRight /></button></div></div>
+        <div className="field"><span>Workout</span><div className="workout-choice-list">{workoutOrder.map((w) => {
+          const workout = program.find((item) => item.week === week && item.name === w);
+          const status = workout ? workoutStatus(history, workout) : null;
+          return <button key={w} className={w === name ? "workout-choice active" : "workout-choice"} onClick={() => setName(w)}><div><b>{w}</b><span>{statusLabel(status)}</span></div><StatusMark status={status} emptyIcon /></button>;
+        })}</div></div>
+      </> : <div className="cardio-form">
+        <div className="cardio-intro"><span><Activity size={24} /></span><div><b>Log a cardio workout</b><p>Add anything you want to remember. The workout will be marked as completed on your calendar.</p></div></div>
+        <label className="field"><span>What did you do? (optional)</span><textarea className="note-input" value={cardioNote} onChange={(e) => setCardioNote(e.target.value)} placeholder="e.g. 30 min easy run, cycling, swimming…" rows={4} /></label>
+      </div>}
       <div className="field"><span>Date</span><input className="date-input" type="date" value={date} onChange={(e) => setDate(e.target.value)} /></div>
       <div className="sheet-actions">
-        <button className="primary" onClick={() => active ? onStart(chosen, date) : onStart(chosen, date)}>{active ? "Continue Workout" : chosen.id === recommendation.id ? "Start Recommended Workout" : "Start Workout"} <ChevronRight size={18} /></button>
+        {mode === "program" ? <button className="primary" onClick={() => onStart(chosen, date)}>{active ? "Continue Workout" : chosen.id === recommendation.id ? "Start Recommended Workout" : "Start Workout"} <ChevronRight size={18} /></button> : <button className="primary" onClick={() => onLogCardio(date, cardioNote.trim())}><Activity size={18} /> Log Cardio Workout</button>}
         <button className="secondary" onClick={onClose}>Cancel</button>
       </div>
     </Sheet>
@@ -816,8 +836,9 @@ function StatusMark({ status, compact = false, emptyIcon = false }: { status: Sa
 function SessionRow({ session }: { session: WorkoutSession }) {
   const completed = session.status === "completed";
   const skipped = session.status === "skipped";
+  const cardio = session.kind === "cardio" || session.name === "Cardio";
   const completedSets = session.exercises.flatMap((e) => e.setLogs).filter((s) => s.completed).length;
-  return <div className="session-row"><StatusMark status={completed ? "completed" : skipped ? "skipped" : null} emptyIcon /><div><b>Week {session.week} · {session.name}</b><span>{completed ? "Completed" : skipped ? "Skipped" : "Partial"} · {completedSets} sets</span></div><em className={completed ? "green" : skipped ? "yellow" : ""}>{completed ? "Completed" : skipped ? "Skipped" : "Partial"}</em></div>;
+  return <div className="session-row"><StatusMark status={completed ? "completed" : skipped ? "skipped" : null} emptyIcon /><div><b>{cardio ? "Cardio" : `Week ${session.week} · ${session.name}`}</b><span>{cardio ? session.note || "Cardio workout" : `${completed ? "Completed" : skipped ? "Skipped" : "Partial"} · ${completedSets} sets`}</span></div><em className={completed ? "green" : skipped ? "yellow" : ""}>{completed ? "Completed" : skipped ? "Skipped" : "Partial"}</em></div>;
 }
 
 function WeekStrip({ history }: { history: WorkoutSession[] }) {
@@ -849,6 +870,25 @@ function createManualSession(workout: Workout, date: string, status: "completed"
   };
 }
 
+function createCardioSession(date: string, note: string): WorkoutSession {
+  const at = new Date().toISOString();
+  return {
+    id: crypto.randomUUID(),
+    workoutId: "cardio",
+    week: 0,
+    name: "Cardio",
+    kind: "cardio",
+    note,
+    date,
+    startedAt: at,
+    completedAt: at,
+    status: "completed",
+    exercises: [],
+    selectedExerciseIndex: 0,
+    timers: {},
+  };
+}
+
 function replaceExercise(choice: { name: string; category: string; clear: boolean }, update: (u: (s: WorkoutSession) => WorkoutSession) => void) {
   update((session) => {
     const i = session.selectedExerciseIndex;
@@ -858,9 +898,9 @@ function replaceExercise(choice: { name: string; category: string; clear: boolea
 }
 
 function getRecommendation(history: WorkoutSession[]) {
-  const completed = history.filter((s) => s.status === "completed" || s.status === "skipped").sort(byCompleteDesc)[0];
+  const completed = history.filter((s) => s.name !== "Cardio" && (s.status === "completed" || s.status === "skipped")).sort(byCompleteDesc)[0];
   if (!completed) return program[0];
-  const nextIndex = workoutOrder.indexOf(completed.name) + 1;
+  const nextIndex = workoutOrder.indexOf(completed.name as WorkoutName) + 1;
   const week = nextIndex >= workoutOrder.length ? (completed.week % 9) + 1 : completed.week;
   const name = workoutOrder[nextIndex % workoutOrder.length];
   return program.find((w) => w.week === week && w.name === name) ?? program[0];
@@ -1012,7 +1052,7 @@ function lowerRpe(rpe: string) {
 function countSets(w: Workout) { return w.exercises.reduce((sum, e) => sum + e.workingSets, 0); }
 function durationMin(s: WorkoutSession) { return Math.max(1, Math.round((new Date(s.completedAt ?? new Date()).getTime() - new Date(s.startedAt).getTime()) / 60000)); }
 function byCompleteDesc(a: WorkoutSession, b: WorkoutSession) { return new Date(b.completedAt ?? b.startedAt).getTime() - new Date(a.completedAt ?? a.startedAt).getTime(); }
-function recommendationReason(history: WorkoutSession[]) { const last = history.filter((s) => s.status === "completed" || s.status === "skipped").sort(byCompleteDesc)[0]; return last ? `Because you ${last.status === "skipped" ? "skipped" : "completed"} Week ${last.week} · ${last.name} last.` : "Start with the first workout in the program."; }
+function recommendationReason(history: WorkoutSession[]) { const last = history.filter((s) => s.name !== "Cardio" && (s.status === "completed" || s.status === "skipped")).sort(byCompleteDesc)[0]; return last ? `Because you ${last.status === "skipped" ? "skipped" : "completed"} Week ${last.week} · ${last.name} last.` : "Start with the first workout in the program."; }
 function formatTimer(seconds: number) { return `${Math.floor(seconds / 60).toString().padStart(2, "0")}:${(seconds % 60).toString().padStart(2, "0")}`; }
 function todayKey() { return dateKey(new Date()); }
 function dateKey(d: Date) { return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; }
